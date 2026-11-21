@@ -110,7 +110,6 @@ def public_record(c):
 
 def walk(seed_file, output, records, depth, bit_cap, state_cap):
     seeds=json.load(open(seed_file))
-    if not seeds['seeds']: raise ValueError('no seeds in this shard; choose a different partition or larger m')
     visited=set()
     unique_points=set()
     frontier=deque()

@@ -15,7 +15,7 @@
 #include <vector>
 using u64=std::uint64_t;
 using u128=unsigned __int128;
-struct Triple {u64 h,v,hyp;};
+struct Triple {u64 h,v,hyp,m;};
 struct Point {u64 x,y,q,d0,d1,d2;};
 static u64 root(u128 v){
     u64 r=static_cast<u64>(sqrtl(static_cast<long double>(v)));
@@ -28,7 +28,7 @@ static std::vector<Triple> triples(u64 max_m){
     for(u64 m=2;m<=max_m;m++)for(u64 n=1;n<m;n++){
         if(((m^n)&1)==0 || std::gcd(m,n)!=1)continue;
         u64 a=m*m-n*n,b=2*m*n,c=m*m+n*n;
-        ts.push_back({a,b,c});ts.push_back({b,a,c});
+        ts.push_back({a,b,c,m});ts.push_back({b,a,c,m});
     }
     return ts;
 }
@@ -41,7 +41,7 @@ template <int N>static bool isqrmod(u64 x,u64 y){
 }
 static u64 arg(const std::string&s){size_t at=0;u64 v=std::stoull(s,&at);if(at!=s.size())throw std::runtime_error("bad parameter: "+s);return v;}
 int main(int argc,char**argv)try{
-    u64 max_m=200,shard=0,shards=1,batch=0,batches=1;
+    u64 max_m=200,min_new_m=0,shard=0,shards=1,batch=0,batches=1;
     std::string out="seeds.json";
     for(int i=1;i<argc;i++){
         std::string s=argv[i];if(s=="--self-test"){
@@ -49,12 +49,18 @@ int main(int argc,char**argv)try{
             bool found15=false,found7=false;
             for(auto t:ts){if(t.h==15&&t.v==8&&t.hyp==17)found15=true;if(t.h==7&&t.v==24&&t.hyp==25)found7=true;}
             if(!found15||!found7)throw std::runtime_error("missing reference triples");
-            if(root(833*64)!=230) { /* floor(sqrt(53312))=230 */ throw std::runtime_error("sqrt test"); }
+            // Reference pair gives the exact 3-distance point P=(45/52,24/52).
+            u64 X=15*24,Y=8*24,Z=7*8,Q=X+Z,V=Q-Y;
+            if(X/8!=45||Y/8!=24||Q/8!=52||root(static_cast<u128>(X)*X+static_cast<u128>(V)*V)!=424)
+                throw std::runtime_error("known 3-distance witness failed");
+            if(root(static_cast<u128>(Z)*Z+static_cast<u128>(V)*V)==231)
+                throw std::runtime_error("non-square fourth distance incorrectly accepted");
             std::cout<<"self-test passed\n";return 0;
         }
         auto p=s.find('=');if(p==std::string::npos)throw std::runtime_error("use --key=value");
         auto k=s.substr(0,p),v=s.substr(p+1);
         if(k=="--max-m")max_m=arg(v);
+        else if(k=="--min-new-m")min_new_m=arg(v);
         else if(k=="--shard")shard=arg(v);
         else if(k=="--shards")shards=arg(v);
         else if(k=="--batch")batch=arg(v);
@@ -62,19 +68,23 @@ int main(int argc,char**argv)try{
         else if(k=="--output")out=v;
         else throw std::runtime_error("unknown flag "+k);
     }
-    if(max_m<4||max_m>1200||shards==0||shards>64||batches==0||batches>512||shard>=shards||batch>=batches)throw std::runtime_error("unsafe/invalid parameters");
+    if(max_m<4||max_m>1800||min_new_m>=max_m||shards==0||shards>64||batches==0||batches>512||shard>=shards||batch>=batches)throw std::runtime_error("unsafe/invalid parameters");
     const auto ts=triples(max_m);
     auto n=ts.size();
     u64 stride=shards*batches,which=batch*shards+shard;
-    u64 selected=0;
-    for(u64 i=which;i<n;i+=stride)selected++;
-    if(selected*n>4000000000ULL) throw std::runtime_error("work budget exceeded: adjust batches/shards/max_m");
+    size_t new_start=0;
+    while(new_start<n && ts[new_start].m<=min_new_m)++new_start;
+    u64 work=0;
+    for(u64 i=which;i<n;i+=stride)work+=(ts[i].m<=min_new_m ? n-new_start : n);
+    if(work>4000000000ULL) throw std::runtime_error("work budget exceeded: adjust batches/shards/max_m");
     u64 tested=0,within=0,sieve=0,third=0,full=0;
     std::set<std::tuple<u64,u64,u64>> unique;
     std::vector<Point> points;
     for(u64 i=which;i<n;i+=stride){
         auto t1=ts[i];
-        for(const auto&t2:ts){
+        size_t first=(t1.m<=min_new_m?new_start:0);
+        for(size_t j=first;j<n;j++){
+            const auto &t2=ts[j];
             tested++;
             u64 X=t1.h*t2.v,Z=t2.h*t1.v,Y=t1.v*t2.v,Q=X+Z;
             if(Y>=Q)continue;
@@ -95,7 +105,7 @@ int main(int argc,char**argv)try{
         }
     }
     std::ofstream o(out);if(!o)throw std::runtime_error("cannot open "+out);
-    o<<"{\n \"method\":\"exhaustive-primitive-triple-pairs\",\n \"max_m\":"<<max_m<<",\"shard\":"<<shard<<",\"shards\":"<<shards<<",\"batch\":"<<batch<<",\"batches\":"<<batches<<",\n"
+    o<<"{\n \"method\":\"exhaustive-primitive-triple-pairs\",\n \"max_m\":"<<max_m<<",\"min_new_m\":"<<min_new_m<<",\"shard\":"<<shard<<",\"shards\":"<<shards<<",\"batch\":"<<batch<<",\"batches\":"<<batches<<",\n"
      <<" \"triple_orientations\":"<<n<<",\"tested_pairs\":"<<tested<<",\"inside\":"<<within<<",\"sieve_passes\":"<<sieve<<",\"three_before_dedupe\":"<<third<<",\"unique_three\":"<<points.size()<<",\"four_distance\":"<<full<<",\n \"seeds\":[\n";
     for(size_t i=0;i<points.size();i++){
         auto p=points[i];
