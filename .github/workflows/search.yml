@@ -1,0 +1,89 @@
+name: Four rational distances - exact arithmetic search
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - '.github/workflows/search.yml'
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: '0..27 or auto (daily partition based on UTC date)'
+        default: 'auto'
+        required: true
+        type: string
+      max_m:
+        description: 'Max Euclid m (4..1200, default 900)'
+        default: '900'
+        required: true
+        type: string
+      max_q_bits:
+        description: 'Largest reduced denominator bit size examined in quartic walks (128..8192)'
+        default: '2048'
+        required: true
+        type: string
+  schedule:
+    - cron: '23 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: four-dist-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and verify arithmetic
+        run: |
+          g++ -O3 -std=c++20 -Wall -Wextra -o enumerate src/enumerate.cpp
+          ./enumerate --self-test
+          python3 src/orbits.py --self-test
+      - name: Run bounded exact search
+        env:
+          BATCH: ${{ inputs.batch || 'auto' }}
+          MAX_M: ${{ inputs.max_m || '900' }}
+          MAX_Q_BITS: ${{ inputs.max_q_bits || '2048' }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          if [[ "$BATCH" == 'auto' ]]; then BATCH=$(( (10#$(date -u +%j) - 1) % 28 )); fi
+          [[ "$BATCH" =~ ^([0-9]|1[0-9]|2[0-7])$ ]]
+          [[ "$MAX_M" =~ ^[0-9]+$ && "$MAX_Q_BITS" =~ ^[0-9]+$ ]]
+          echo "batch=$BATCH shard=$SHARD max_m=$MAX_M q_bits=$MAX_Q_BITS"
+          ./enumerate "--max-m=$MAX_M" "--batch=$BATCH" --batches=28 "--shard=$SHARD" --shards=4 --output=seeds.json | tee enumerate.log
+          python3 src/orbits.py --seeds=seeds.json --depth=5 "--max-q-bits=$MAX_Q_BITS" --max-states=50000 --output=orbits-summary.json --records=orbits.jsonl.gz | tee orbits.log
+          python3 - <<'PY'
+          import json,os
+          s=json.load(open('seeds.json')); o=json.load(open('orbits-summary.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write(f"### Shard {s['shard']}, batch {s['batch']} of {s['batches']}, m <= {s['max_m']}\n\n")
+              f.write(f"Ordered triple pairs tested: {s['tested_pairs']:,}; distinct seed 3-distance points: {s['unique_three']:,}.\n\n")
+              f.write(f"New exact 3-distance points on quartic walks: {o['stats']['three_distance_points']:,}; reduced denominator >50 billion: {o['stats']['over_50_billion']:,}; largest denominator: {o['stats']['max_q_bits']:,} bits; 4-distance witnesses: {s['four_distance'] + o['stats']['found_four']:,}.\n\n")
+              f.write('**These are parameter-space sweeps and rational-point walks, not denominator-complete exclusion bounds.**\n')
+          if s['four_distance'] or o['stats']['found_four']:
+              print('::error::POTENTIAL EXACT FOUR-DISTANCE WITNESS! Read seeds.json / orbits-summary.json and verify independently.')
+              raise SystemExit(3)
+          PY
+      - name: Preserve exact candidates and reproducibility metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rational-distance-shard-${{ matrix.shard }}
+          path: |
+            seeds.json
+            orbits-summary.json
+            orbits.jsonl.gz
+            enumerate.log
+            orbits.log
+          retention-days: 30
+          if-no-files-found: warn
