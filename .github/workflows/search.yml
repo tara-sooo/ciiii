@@ -60,6 +60,7 @@ jobs:
           ./enumerate --self-test
           python3 src/orbits.py --self-test
           python3 src/secants.py --self-test
+          python3 src/diverse_secants.py --self-test
       - name: Run bounded exact search
         env:
           BATCH: ${{ inputs.batch || 'auto' }}
