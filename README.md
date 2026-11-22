@@ -26,6 +26,11 @@ holds for integers A,B,C,D. We verify squares with integer arithmetic, not float
 
    A quadratic polynomial `w = lead*s^2 + B*s + C` (`lead=+1` or `-1`) tangent to the quartic at a rational point intersects the quartic at another rational point. Iteration generates large-denominator **exact** three-distance points, including points outside the square. Every generated candidate is checked against all three integer-square identities, and the fourth distance is tested exactly.
 
+
+3. `src/secants.py` (opt-in local follow-up) creates rational points from **two different points on the same quartic**, rather than repeatedly taking tangents at one point. For `w^2=f(s)`, choose a quadratic `w=lead*s^2+B*s+C` with `lead=+1` or `-1` through two known rational points of different `s`. The leading quartic terms in `f(s)-(lead*s^2+B*s+C)^2` cancel. The remaining cubic has the two input rational roots, so its third root is rational. Each resulting three-distance point and its fourth squared distance are verified using exact integers. This does **not** make the search complete.
+
+   The standalone script accepts the original `seeds-*.json` files and/or earlier compressed `points-*.jsonl.gz` orbit results. It can mix anchors from different shards when their primitive slopes match, uses only input points below configured height caps, and limits the number of secants per curve. Results are kept separate from the previous tangent-walk outputs.
+
 The walk is not exhaustive: it visits a finite subset of rational points on specific genus-one curves. An arbitrarily small *approximation* to a rational fourth distance does not imply an exact solution.
 
 ## Run locally
@@ -34,9 +39,30 @@ The walk is not exhaustive: it visits a finite subset of rational points on spec
 g++ -O3 -std=c++20 -Wall -Wextra -o enumerate src/enumerate.cpp
 ./enumerate --self-test
 python3 src/orbits.py --self-test
+python3 src/secants.py --self-test
 ./enumerate --max-m=120 --output=seeds.json
 python3 src/orbits.py --seeds=seeds.json --depth=5 --max-q-bits=2048
 ```
+
+For a local follow-up using already generated `m<=1500` files (run in the repository root after the 900/1100/1500 batches and tangent walks have completed):
+
+```bash
+mkdir -p local-secants
+python3 src/secants.py --self-test
+python3 src/secants.py \\
+  --seeds seeds-[0-3].json seeds-17-[0-3].json \\
+          local900/seeds-*.json local1100/seeds-*.json local1500/seeds-*.json \\
+  --orbits local900/orbits8192/points-*.jsonl.gz \\
+           local1100/orbits8192/points-*.jsonl.gz \\
+           local1500/orbits8192/points-*.jsonl.gz \\
+  --tangent-depth=2 --source-bits=512 --source-q-bits=256 \\
+  --per-curve=12 --pairs-per-curve=32 --max-attempts=250000 \\
+  --max-q-bits=8192 \\
+  --output=local-secants/summary.json \\
+  --records=local-secants/points.jsonl.gz
+```
+
+A self-test passes without input files. The search prints `FOUR=<count>` at completion, or `POTENTIAL FOUR-DISTANCE SOLUTION!` immediately for any exact witness. A zero count is evidence only about the bounded candidates actually tested. Python 3.11+ integer-to-string digit limits are lifted inside `secants.py` to allow 8,192-bit denominators and larger squared-distance numerators.
 
 The regression test includes the known point `(45/52,24/52)` with distances `51/52`, `25/52`, `53/52`, `sqrt(833)/52`. Both programs require only a standard C++20 compiler and Python 3 standard library. Parameters and resource caps are validated.
 
