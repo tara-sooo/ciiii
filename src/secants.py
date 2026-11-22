@@ -266,7 +266,7 @@ def self_test():
         orbit_candidate = candidate(*nxt, a, b, h2, cf, 8192)
         assert isinstance(orbit_candidate, dict)
         with gzip.open(orbit_path, "wt", encoding="utf-8") as f:
-            f.write(json.dumps(public_record(orbit_candidate)) + "\\n")
+            f.write(json.dumps(public_record(orbit_candidate)) + "\n")
         result = search([str(seed_path)], [str(orbit_path)],
                         str(output_path), str(points_path),
                         tangent_depth=1, source_bits=512, source_q_bits=256,
