@@ -254,7 +254,32 @@ def self_test():
                     assert zz[1]*zz[1] == quartic(zz[0], cf)
                     cc = candidate(*zz, a, b, h2, cf, 8192)
                     assert cc is None or cc == "over" or isinstance(cc, dict)
-    print("self-test passed: secant root and exact three-distance identities")
+    # End-to-end fixture: seed JSON + compressed tangent-orbit JSONL.
+    from tempfile import TemporaryDirectory
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        seed_path = root / "seeds.json"
+        orbit_path = root / "orbit.jsonl.gz"
+        output_path = root / "summary.json"
+        points_path = root / "points.jsonl.gz"
+        seed_path.write_text(json.dumps({"seeds": [p]}), encoding="utf-8")
+        orbit_candidate = candidate(*nxt, a, b, h2, cf, 8192)
+        assert isinstance(orbit_candidate, dict)
+        with gzip.open(orbit_path, "wt", encoding="utf-8") as f:
+            f.write(json.dumps(public_record(orbit_candidate)) + "\\n")
+        result = search([str(seed_path)], [str(orbit_path)],
+                        str(output_path), str(points_path),
+                        tangent_depth=1, source_bits=512, source_q_bits=256,
+                        per_curve=12, pairs_per_curve=32,
+                        max_attempts=100, bit_cap=512)
+        stats = result["stats"]
+        assert stats["input_seeds"] == 1 and stats["orbit_rows"] == 1
+        assert stats["pairs"] > 0 and stats["three_distance_points"] > 0
+        assert stats["found_four"] == 0
+        assert json.loads(output_path.read_text())["stats"] == stats
+        with gzip.open(points_path, "rt", encoding="utf-8") as f:
+            assert sum(1 for _ in f) == stats["three_distance_points"]
+    print("self-test passed: secant identities and end-to-end seed/orbit search")
 
 
 if __name__ == "__main__":
