@@ -59,6 +59,7 @@ jobs:
           g++ -O3 -std=c++20 -Wall -Wextra -o enumerate src/enumerate.cpp
           ./enumerate --self-test
           python3 src/orbits.py --self-test
+          python3 src/secants.py --self-test
       - name: Run bounded exact search
         env:
           BATCH: ${{ inputs.batch || 'auto' }}
