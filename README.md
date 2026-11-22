@@ -64,6 +64,31 @@ python3 src/secants.py \\
 
 A self-test passes without input files. The search prints `FOUR=<count>` at completion, or `POTENTIAL FOUR-DISTANCE SOLUTION!` immediately for any exact witness. A zero count is evidence only about the bounded candidates actually tested. Python 3.11+ integer-to-string digit limits are lifted inside `secants.py` to allow 8,192-bit denominators and larger squared-distance numerators.
 
+## Round-aware secant follow-up (new generation)
+
+`src/diverse_secants.py` takes previous seed/tangent/first-round points as **base** and the newest secant records as **fresh**. For each primitive slope, it picks s-distinct points spread across rational height ranges, and prioritizes fresh/base and fresh/fresh combinations. It does not spend trial budget on base/base combinations. It checks all generated three-distance and fourth-distance identities exactly, and suppresses points present in earlier compressed records. The run also writes a compressed hash ledger of attempted unordered secant pairs so a later run can skip those exact pairs using `--prior-pairs`. All search limits are finite.
+
+```bash
+mkdir -p local-secants
+python3 src/diverse_secants.py --self-test
+python3 src/diverse_secants.py \\
+  --seeds seeds-[0-3].json seeds-17-[0-3].json \\
+          local900/seeds-*.json local1100/seeds-*.json local1500/seeds-*.json \\
+  --base local900/orbits8192/points-*.jsonl.gz \\
+         local1100/orbits8192/points-*.jsonl.gz \\
+         local1500/orbits8192/points-*.jsonl.gz \\
+         local-secants/points.jsonl.gz \\
+  --fresh local-secants/round2-points.jsonl.gz \\
+  --source-bits=1024 --source-q-bits=2048 \\
+  --per-curve=32 --pairs-per-curve=256 --max-attempts=2500000 \\
+  --max-q-bits=8192 \\
+  --output=local-secants/round3-summary.json \\
+  --records=local-secants/round3-points.jsonl.gz \\
+  --pair-log=local-secants/round3-pairs.txt.gz
+```
+
+The compressed pair ledger is for **future** trials; earlier v1/v2 runs did not record their exact tested pairs. The third-generation selection avoids base/base pairs, but it is not guaranteed that no exact pair was ever evaluated in an earlier run. The `three_distance_points` counter covers points not present in the supplied compressed base/fresh history, deduplicated within this run. Prior seed points are also excluded by their curve parameters. No complete solution is expected or claimed.
+
 The regression test includes the known point `(45/52,24/52)` with distances `51/52`, `25/52`, `53/52`, `sqrt(833)/52`. Both programs require only a standard C++20 compiler and Python 3 standard library. Parameters and resource caps are validated.
 
 ## GitHub Actions campaign
