@@ -1,0 +1,19 @@
+name: Certified curve classification tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/classify_curves.py'
+      - 'src/periodic_sieve.py'
+      - 'src/elliptic_sieve.py'
+      - '.github/workflows/classify-curves.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 src/classify_curves.py --self-test
