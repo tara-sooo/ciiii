@@ -1,0 +1,26 @@
+name: Elliptic finite-field sieve tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/elliptic_sieve.py'
+      - '.github/workflows/elliptic-sieve.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 src/elliptic_sieve.py --self-test
+      - name: Pilot with 500 multiples
+        run: |
+          mkdir -p pilot
+          printf '%s\n' '{"seeds":[{"x":"45","y":"24","q":"52","d":["51","25","53"]}]}' > pilot/seeds.json
+          python3 src/elliptic_sieve.py --seeds pilot/seeds.json --max-multiple 500 --prime-limit 251 --axes x --output pilot/summary.json --records pilot/curves.jsonl.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: elliptic-pilot
+          path: pilot/
