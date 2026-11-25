@@ -91,6 +91,44 @@ The compressed pair ledger is for **future** trials; earlier v1/v2 runs did not 
 
 The regression test includes the known point `(45/52,24/52)` with distances `51/52`, `25/52`, `53/52`, `sqrt(833)/52`. Both programs require only a standard C++20 compiler and Python 3 standard library. Parameters and resource caps are validated.
 
+
+## Changing-anchor quartic follow-up
+
+`src/reanchor.py` changes the reference corner for each generated point.
+At A it uses monic quadratic tangents. At B/C the remaining known corner
+is diagonal: with `H=a*a+b*b`, `D=H-s*s`, `t=2*(s+a)/D`,
+the quartic is `w*w=2*D*D-4*(a+b)*(s+a)*D+4*H*(s+a)^2`.
+A quadratic tangent at one known rational point and passing through a
+second known point supplies a fourth rational intersection by Vieta.
+The two signed conic-distance parameters of each input provide the
+initial distinct rational points whenever nondegenerate. Every resulting
+coordinate is reduced and all four distances are checked using integers.
+
+Example for the newest completed local seed band:
+
+```bash
+python3 src/reanchor.py --self-test
+mkdir -p local-reanchor
+python3 src/reanchor.py \
+  --seeds local1800/seeds-*.json \
+  --anchors ABC --depth 2 --source-bits 256 --max-q-bits 8192 \
+  --max-inputs 10000 --max-points 100000 \
+  --output local-reanchor/m1800-summary.json \
+  --records local-reanchor/m1800-points.jsonl.gz
+```
+
+The `--points` option accepts prior orbit/secant/reanchor gzip JSONL
+records. `--source-bits` bounds all three input integer coordinates,
+while `--max-q-bits` bounds generated denominators. The bounded walk
+deduplicates exact coordinates encountered within each run; it does not
+guarantee global novelty against unprocessed earlier files. Exterior
+points can serve as intermediates, but only interior four-distance
+witnesses trigger the alert. Outputs are separate from the old runs;
+completed files are not overwritten. A run stopped by interruption
+must be restarted with its own output paths (partial files do not
+constitute a checkpoint). `--anchors BC` restricts exploration to the
+two new diagonal quartics. No third-party Python packages are required.
+
 ## GitHub Actions campaign
 
 The workflow runs daily at 02:23 UTC, on source changes to `main`, and via manual dispatch. Four shards process disjoint slices of the ordered-triple-pair search space. The scheduled campaign has **non-overlapping parameter bands** (at least one triple uses an Euclid parameter from the newly added band):
