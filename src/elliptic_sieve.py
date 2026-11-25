@@ -400,13 +400,18 @@ def self_test():
         expected=[None if y is None or y.denominator%p==0 else
                   y.numerator*pow(y.denominator,-1,p)%p for y in rational]
         assert mod_heights(R,A,B,p,N)==expected,(p,expected,mod_heights(R,A,B,p,N))
-    direct,paired,chosen,num,counts=sieve(R,A,B,N,primes,"both")
-    # Independent small brute-force check of projective pair equality.
-    tables=[(p,mod_heights(R,A,B,p,N)) for p in primes]
-    brute=[(i,j) for i in range(4*N) for j in range(i,4*N)
-           if all(t[j]==complement(t[i],A+B,p) for p,t in tables)]
-    assert num==len(brute)
-    assert paired=={i for pair in brute for i in pair}
+    # Independent brute-force check, including surviving pairs and poles.
+    for subset in ([],primes[:1],primes):
+        direct,paired,chosen,num,counts=sieve(R,A,B,N,subset,"both")
+        tables=[(p,mod_heights(R,A,B,p,N)) for p in subset]
+        brute=[(i,j) for i in range(4*N) for j in range(i,4*N)
+               if all(t[j]==complement(t[i],A+B,p) for p,t in tables)]
+        assert num==len(brute)
+        assert paired=={i for pair in brute for i in pair}
+        assert set(chosen)==set(direct)
+    assert exact_check(A,B,F(24)) is False
+    assert exact_check(A,B,None) is None
+    assert exact_check(A,B,F(-24)) is None
     # Seed and gzip input integration, exact survivor check, output format.
     with TemporaryDirectory() as root:
         f=Path(root)
