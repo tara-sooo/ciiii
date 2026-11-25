@@ -243,6 +243,19 @@ is exactly one and the torsion order is certified as eight, a finite
 height-bound search can prove saturation of the chosen generator.
 Only after these steps does it report a whole-line exclusion.
 
+The default v2 descent constructs a binary linear system on signed
+squarefree divisor exponents using all factored odd bad primes
+(Legendre and valuation conditions) and a necessary 2-adic test.
+Gaussian elimination bounds the dimension before enumeration.
+Even when the remaining kernel exceeds the class enumeration cap,
+its dimension still provides a certified upper bound. Proof records
+include the basis, constraints, kernel and enumeration status;
+the summary includes rank-bound and dimension-reduction histograms.
+Use `--bad-prime-linear 0` for the original descent. Older v1 proof
+records remain replayable with their original saved parameters.
+Use fresh output names for a v2 run (e.g. m1800-v2-summary.json and
+m1800-v2-proofs.jsonl.gz).
+
 ```bash
 python3 src/classify_curves.py --self-test
 mkdir -p local-classify
