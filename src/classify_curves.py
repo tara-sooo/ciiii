@@ -152,6 +152,161 @@ def descent_side(a,b,primes,mods,cap,positive=False):
                 dimension_upper=len(keep).bit_length()-1)
 
 
+
+def binary_kernel(rows,n):
+    """Homogeneous GF(2) kernel, represented by integer bit masks."""
+    pivots={}
+    for row in rows:
+        while row:
+            k=row.bit_length()-1
+            if k in pivots:
+                row^=pivots[k]
+            else:
+                pivots[k]=row
+                break
+    basis=[]
+    for j in range(n):
+        if j in pivots:
+            continue
+        v=1<<j
+        for k,row in sorted(pivots.items()):
+            if (row&v).bit_count()%2:
+                v^=1<<k
+        basis.append(v)
+    return basis
+
+
+def class_mask(d,gens):
+    return sum(1<<i for i,g in enumerate(gens)
+               if (d<0 if g==-1 else d%g==0))
+
+
+def mask_class(mask,gens):
+    d=1
+    for i,g in enumerate(gens):
+        if mask>>i&1:
+            d*=g
+    return d
+
+
+def legendre_row(gens,p):
+    if any(g%p==0 for g in gens):
+        raise ArithmeticError("Legendre symbol requested for nonunit")
+    return sum(1<<i for i,g in enumerate(gens)
+               if pow(g%p,(p-1)//2,p)==p-1)
+
+
+def local_two_code(d):
+    """Coordinates of Q_2*/Q_2*^2: v2 parity, -1, 5."""
+    e=0
+    while d%2==0:
+        d//=2
+        e^=1
+    return e | ({1:0,7:2,5:4,3:6}[d%8])
+
+
+def two_adic_rows(a,b,gens,mod=256):
+    # A unit square rescales i and w without changing primitive local
+    # solubility. Test representatives of all possible Q_2 squareclasses
+    # modulo mod, using the odd part inverse in b/d. A class that fails
+    # this necessary test cannot be a rational descent class.
+    S,all_j,nonunit_i=local_data(mod)
+    allowed=[]
+    for d in (1,3,5,7,2,6,10,14):
+        e=d%2==0
+        if e and b%2:
+            continue
+        d0=d%mod
+        e0=(b//(2 if e else 1))*pow(d//(2 if e else 1),-1,mod)%mod
+        a0=a%mod
+        if (any((d0+a0*j2+e0*j4)%mod in S for j2,j4 in all_j)
+            or any((d0*i4+a0*i2+e0)%mod in S for i2,i4 in nonunit_i)):
+            allowed.append(local_two_code(d))
+    # Every vector orthogonal to all allowed codes vanishes on the true
+    # image. Using their span is safe even if the finite test is weaker.
+    codes=[local_two_code(g) for g in gens]
+    rows=[]
+    for q in range(1,8):
+        if all((q&v).bit_count()%2==0 for v in allowed):
+            row=sum(1<<i for i,v in enumerate(codes) if (q&v).bit_count()%2)
+            if row:
+                rows.append(["two_adic",q,row])
+    return rows,allowed
+
+
+def linear_descent_side(a,b,primes,other_primes,mods,cap,dual=False):
+    gens=[-1]+sorted(primes)
+    rows=[]
+    if dual:
+        rows.append(["real",0,1])
+    # At a bad odd prime outside the support of d, the quartic is
+    # d*(i^2 + a/(2*d)*j^2)^2 modulo p. If -a/2 is a square,
+    # a nonsquare d allows neither a nonzero square nor a primitive zero.
+    for p in sorted(other_primes-primes):
+        if p==2:
+            continue
+        if (a*a-4*b)%p or a%p==0:
+            raise ArithmeticError("unexpected singular prime")
+        if pow((-a*pow(2,-1,p))%p,(p-1)//2,p)==1:
+            row=legendre_row(gens,p)
+            if row:
+                rows.append(["legendre",p,row])
+    # When p|b, v_p(b) is positive and even. If a is a nonsquare
+    # unit and p|d, the quartic terms with d and b/d have odd
+    # valuations; the mixed term, when uniquely minimal, has a
+    # nonsquare unit. For primitive i,j the minimum is unique
+    # (or the mixed term is strictly minimal if i,j both units).
+    # Hence no square can occur, and the p exponent of d must vanish.
+    for i,p in enumerate(gens):
+        if p<=2:
+            continue
+        if b%p or a%p==0:
+            raise ArithmeticError("unexpected squareclass support")
+        if pow(a%p,(p-1)//2,p)==p-1:
+            rows.append(["valuation",p,1<<i])
+    two,allowed_two=two_adic_rows(a,b,gens)
+    rows+=two
+    kernel=binary_kernel([r[2] for r in rows],len(gens))
+    dimension=len(kernel)
+    result=dict(initial=1<<len(gens),linear_candidates=1<<dimension,
+                linear_dimension=dimension,linear_constraints=rows,
+                kernel_basis=kernel,basis_generators=gens,
+                two_adic_allowed_codes=allowed_two,
+                dimension_upper=dimension,survivors=None,rejected=[],
+                enumeration_complete=False)
+    if (1<<dimension)>cap:
+        # The kernel dimension is itself a certified upper bound, even
+        # when the subsequent finite enumeration is too large.
+        return result
+    masks=[0]
+    for v in kernel:
+        masks += [m^v for m in masks]
+    keep=[]
+    rejected=[]
+    for d in sorted(mask_class(m,gens) for m in masks):
+        for mod in mods:
+            if not locally_possible(d,a,b,mod):
+                rejected.append([d,mod])
+                break
+        else:
+            keep.append(d)
+    if 1 not in keep:
+        raise ArithmeticError("identity lost in linear descent")
+    result.update(survivors=keep,rejected=rejected,enumeration_complete=True,
+                  dimension_upper=len(keep).bit_length()-1)
+    return result
+
+
+def check_linear_realized(d,side):
+    mask=class_mask(d,side["basis_generators"])
+    if mask_class(mask,side["basis_generators"])!=d:
+        raise ArithmeticError("realized class outside basis")
+    if any((row&mask).bit_count()%2 for _,_,row in side["linear_constraints"]):
+        raise ArithmeticError("realized class excluded by linear constraints")
+    if side["survivors"] is not None and d not in side["survivors"]:
+        raise ArithmeticError("realized class excluded by finite local test")
+
+
 def squareclass(x,primes):
     if not x:
         return 1
@@ -403,11 +558,20 @@ def classify(A,B,Rs,opts):
                 result["independence"]=[i,j,str(a0*b0-cross*cross)]
     result["rank_lower"]=lower
     mods=list(dict.fromkeys([256,27,25,49,121]+primes_up_to(opts["descent_prime_limit"])))
-    d1=descent_side(c2,c4,ep,mods,opts["class_cap"])
-    d2=descent_side(-2*c2,(B*B-A*A)**2,dp,mods,opts["class_cap"],positive=True)
+    if opts.get("bad_prime_linear",0):
+        # All factored bad primes enter the symbolic constraints, even
+        # those far above the finite modular enumeration limit.
+        d1=linear_descent_side(c2,c4,ep,dp,mods,opts["class_cap"])
+        d2=linear_descent_side(-2*c2,(B*B-A*A)**2,dp,ep,mods,opts["class_cap"],dual=True)
+        for d in realized:
+            check_linear_realized(d,d1)
+        check_linear_realized(1,d2)
+    else:
+        d1=descent_side(c2,c4,ep,mods,opts["class_cap"])
+        d2=descent_side(-2*c2,(B*B-A*A)**2,dp,mods,opts["class_cap"],positive=True)
     result["descent"]=dict(E=d1,dual=d2,realized_E=realized,moduli=mods)
     if d1 is not None and d2 is not None:
-        if any(d not in d1["survivors"] for d in realized):
+        if d1["survivors"] is not None and any(d not in d1["survivors"] for d in realized):
             raise ArithmeticError("realized squareclass excluded")
         upper=d1["dimension_upper"]+d2["dimension_upper"]-2
         if upper<lower:
@@ -457,7 +621,7 @@ def classify(A,B,Rs,opts):
 
 DEFAULTS=dict(factor_limit=100000,descent_prime_limit=97,class_cap=4096,
     height_steps=4,bit_cap=32768,prime_limit=251,node_cap=10000,
-    crt_class_cap=1024,exact_n_cap=100,saturation_cap=1024,independence_cap=4)
+    crt_class_cap=1024,exact_n_cap=100,saturation_cap=1024,independence_cap=4,bad_prime_linear=1)
 
 
 def load_models(paths,max_models):
@@ -493,10 +657,19 @@ def run(paths,output,records,max_models,opts):
     groups,rows,stopped=load_models(paths,max_models)
     stats=Counter(input_rows=rows,curves=0,line_excluded=0,subgroup_excluded=0,
                   rank_one=0,rank_at_least_2=0,solutions=0,stopped_at_curve_cap=int(stopped))
+    rank_hist=Counter()
+    linear_hist=Counter()
     with gzip.open(part,"wt",encoding="utf-8") as f:
         for (A,B),Rs in sorted(groups.items()):
             r=classify(A,B,sorted(Rs),opts)
             status=r["status"]
+            rank_hist[(r["rank_lower"],r["rank_upper"])]+=1
+            for side in ("E","dual"):
+                d=r.get("descent",{}).get(side)
+                if d is not None and "linear_dimension" in d:
+                    linear_hist[(side,len(d["basis_generators"])-d["linear_dimension"])]+=1
+                    stats["linear_constraints_independent_"+side]+=len(d["basis_generators"])-d["linear_dimension"]
+                    stats["linear_enumeration_cap_"+side]+=int(not d["enumeration_complete"])
             stats["curves"]+=1
             stats["status_"+status]+=1
             stats["rank_one"]+=int(r["rank_lower"]==r["rank_upper"]==1)
@@ -510,7 +683,10 @@ def run(paths,output,records,max_models,opts):
             if stats["curves"]%25==0:
                 print(f"curves={stats['curves']} rank1={stats['rank_one']} rank2plus={stats['rank_at_least_2']} "
                       f"subgroup_excluded={stats['subgroup_excluded']} line_excluded={stats['line_excluded']}",flush=True)
-    summary=dict(method="rank-height-saturation-v1",parameters=opts,inputs=paths,stats=dict(stats))
+    summary=dict(method="rank-height-saturation-v2" if opts.get("bad_prime_linear") else "rank-height-saturation-v1",
+                 parameters=opts,inputs=paths,stats=dict(stats),
+                 rank_bounds=[[lo,hi,count] for (lo,hi),count in rank_hist.most_common()],
+                 linear_dimension_reductions=[[side,k,count] for (side,k),count in linear_hist.most_common()])
     tmp.write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
     part.replace(rec)
     tmp.replace(out)
@@ -540,6 +716,68 @@ def self_test():
     from tempfile import TemporaryDirectory
     assert prime64(18446744073709551557)
     assert not prime64(341550071728321)
+
+    # Exhaustively compare the binary kernel against all masks.
+    import random
+    rng=random.Random(20261125)
+    for n in range(1,10):
+        for _ in range(20):
+            rows=[rng.randrange(1<<n) for j in range(n+2)]
+            basis=binary_kernel(rows,n)
+            masks=[0]
+            for v in basis:
+                masks += [m^v for m in masks]
+            brute={m for m in range(1<<n)
+                   if all((m&r).bit_count()%2==0 for r in rows)}
+            assert set(masks)==brute and len(masks)==len(brute)
+    # Independently test local conditions at all odd bad primes of
+    # small models, and compare 2-adic code filtering to direct mod256.
+    for a in range(1,15):
+        for b in range(a+1,31):
+            if gcd(a,b)!=1:
+                continue
+            fac=factor_inputs(a,b,100)
+            ep=set(fac["A"])|set(fac["B"])
+            dp=set(fac["sum"])|set(fac["difference"])
+            aa,bb=coeff(a,b)
+            for ca,cb,ps,qs,dual in ((aa,bb,ep,dp,False),
+                    (-2*aa,(b*b-a*a)**2,dp,ep,True)):
+                d=linear_descent_side(ca,cb,ps,qs,[256,27,25],4096,dual)
+                gens=d["basis_generators"]
+                for sc in classes(ps,4096):
+                    mask=class_mask(sc,gens)
+                    for kind,p,row in d["linear_constraints"]:
+                        if not (mask&row).bit_count()%2:
+                            continue
+                        if kind=="real":
+                            assert sc<0
+                        elif kind=="legendre":
+                            assert not locally_possible(sc,ca,cb,p)
+                        elif kind=="two_adic":
+                            assert not locally_possible(sc,ca,cb,256)
+                        elif kind=="valuation":
+                            # Test deeply enough to see the odd valuation
+                            # obstruction; restrict work to small moduli.
+                            q=p
+                            while cb%q==0 and q<=256:
+                                q*=p
+                            if q<=256:
+                                assert not locally_possible(sc,ca,cb,q)
+                assert d["survivors"] is not None
+                old=descent_side(ca,cb,ps,[256,27,25],4096,dual)
+                assert set(d["survivors"])<=set(old["survivors"])
+    # A large bad prime supplies a constraint without scanning p residues.
+    # A=1, B=102 has B^2-A^2=101*103. p=101 is beyond the old limit 97.
+    a,b=1,102
+    ca,cb=coeff(a,b)
+    x=linear_descent_side(ca,cb,{2,3,17},{101,103},[256],4096)
+    assert any(kind=="legendre" and p==101 for kind,p,_ in x["linear_constraints"])
+    # Even a cap of one retains a rigorous dimension bound.
+    y=linear_descent_side(ca,cb,{2,3,17},{101,103},[256],1)
+    assert y["dimension_upper"]>=x["dimension_upper"]
+    assert y["survivors"] is None or y["survivors"]==[1]
+    print("linear descent tests passed: kernels, bad primes, 2-adic classes, cap bounds")
+
     A,B=7,45
     R=(F(27),F(-2052))
     opts=DEFAULTS.copy()
@@ -603,7 +841,7 @@ if __name__=="__main__":
     limits=dict(factor_limit=(10,1000000),descent_prime_limit=(3,251),
         class_cap=(16,65536),height_steps=(0,8),bit_cap=(1024,1000000),
         prime_limit=(5,1000),node_cap=(1,100000),crt_class_cap=(1,10000),
-        exact_n_cap=(0,10000),saturation_cap=(1,4096),independence_cap=(1,16))
+        exact_n_cap=(0,10000),saturation_cap=(1,4096),independence_cap=(1,16),bad_prime_linear=(0,1))
     if not 1<=a.max_models<=100000 or any(not limits[k][0]<=v<=limits[k][1] for k,v in opts.items()):
         ap.error("invalid resource limit")
     run(a.prior_models,a.output,a.records,a.max_models,opts)
