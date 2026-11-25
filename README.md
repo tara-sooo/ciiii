@@ -129,6 +129,57 @@ must be restarted with its own output paths (partial files do not
 constitute a checkpoint). `--anchors BC` restricts exploration to the
 two new diagonal quartics. No third-party Python packages are required.
 
+
+## Elliptic finite-field sieve
+
+`src/elliptic_sieve.py` fixes a rational coordinate A/(A+B), with
+positive coprime A,B and A != B. On the integer-scaled curve
+`v^2=u(u+A^2)(u+B^2)`, the signed height of a doubled point is
+`f(R)=(u^2-A^2*B^2)/(2*v)`. From a certified three-distance seed,
+the script constructs a rational half-point by the square-root
+halving formula. It explores labels `+/-f(nR)` and
+`+/-AB/f(nR)` (the inversion induced by translation by the
+two-torsion point). Both x- and y-coordinate models can be built.
+
+At good odd primes (not dividing AB(A-B)(A+B)), a direct sieve tests
+the two complementary square-distance conditions modulo p. A second
+sieve counts compatible unordered pairs of labels whose heights
+could sum to A+B, using bit masks. Poles are retained projectively;
+two poles may satisfy the homogeneous sum condition. Only surviving
+labels are evaluated over the rationals and all four original integer
+distance identities are checked. The default mode `both` records both
+sieves and verifies all direct survivors, not just labels having a
+partner in the bounded list. `pairs` restricts exact checks to paired
+labels, and `direct` skips pair bookkeeping.
+
+```bash
+python3 src/elliptic_sieve.py --self-test
+mkdir -p local-elliptic
+python3 src/elliptic_sieve.py \
+  --seeds local1800/seeds-*.json \
+  --axes xy --max-multiple 500 --prime-limit 251 \
+  --source-bits 256 --max-curves 2000 --max-exact-bits 32768 \
+  --max-exact-labels 100 --mode both \
+  --output local-elliptic/m1800-summary.json \
+  --records local-elliptic/m1800-curves.jsonl.gz
+```
+
+`--points` accepts existing gzip JSONL orbit, secant and reanchor
+records. `--max-curves` actually caps distinct (curve, generator)
+models, so several generators on the same curve may be searched;
+this version does not compute Mordell-Weil ranks or mix generators.
+`labels` and `pairs_before` count formal labels and unordered label
+pairs (including repeated labels), not distinct rational points.
+The work/label caps leave explicitly reported deferred candidates in
+the per-model records; zero witnesses with deferred candidates is
+not a complete check of those labels. No rank-zero exclusions or
+unbounded coverage claims are made. A single curve uses a chosen
+cyclic subgroup, plus inversion and sign. Degenerate fixed coordinates
+0, 1 and 1/2 are skipped. The output records reflect the fixed coordinate
+to the smaller of a and 1-a and may swap axes, using square symmetries.
+Completed outputs are not overwritten, and partial files are not
+resumable checkpoints. Python standard library only.
+
 ## GitHub Actions campaign
 
 The workflow runs daily at 02:23 UTC, on source changes to `main`, and via manual dispatch. Four shards process disjoint slices of the ordered-triple-pair search space. The scheduled campaign has **non-overlapping parameter bands** (at least one triple uses an Euclid parameter from the newly added band):
