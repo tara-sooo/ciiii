@@ -1,0 +1,17 @@
+name: Changing-anchor exact search tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/reanchor.py'
+      - '.github/workflows/reanchor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 src/reanchor.py --self-test
