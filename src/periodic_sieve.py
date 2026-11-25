@@ -247,6 +247,7 @@ def analyze_branch(constraints,node_cap,class_cap):
                 exact_classes=complete or not S,merged_period=str(M),
                 surviving_classes=len(S),residues=sorted(S),witness=witness,
                 density_upper=str(F(len(S),M)),
+                min_abs_n_lower_bound=str(min((min(r,M-r) or M for r in S),default=0)),
                 reduced_constraints=[[m,sorted(T)] for m,T in zip(moduli,D)])
 
 
@@ -367,6 +368,7 @@ def self_test():
             M=int(b["merged_period"])
             assert {n for n in range(period) if n%M in b["residues"]}==brute
             assert int(b["witness"])%period in brute
+            assert int(b["min_abs_n_lower_bound"])==min(min(n,period-n) or period for n in brute)
     A,B=7,45
     R=half_point(F(24),F(25),F(51),A,B)
     for p in good_primes(A,B,primes_up_to(101)):
@@ -380,7 +382,7 @@ def self_test():
     assert r["branches"]["ordinary"]["status"]=="survives"
     print("pilot",json.dumps({k:{j:v for j,v in b.items() if j in
           ("status","method","period","nodes","exact_classes","merged_period",
-           "surviving_classes","density_upper","witness")}
+           "surviving_classes","density_upper","min_abs_n_lower_bound","witness")}
           for k,b in r["branches"].items()}))
     with TemporaryDirectory() as root:
         f=Path(root)
@@ -391,7 +393,9 @@ def self_test():
         with gzip.open(f/"records.gz","rt") as inp:
             assert len(list(inp))==2
         t=search([],[],[str(f/"records.gz")],f/"summary2.json",f/"records2.gz",101,256,10,1000,128,"xy")
-        assert t["stats"]==s["stats"],(t,s)
+        assert t["stats"]["input_rows"]==2 and s["stats"]["input_rows"]==1
+    assert {k:v for k,v in t["stats"].items() if k!="input_rows"} == {
+        k:v for k,v in s["stats"].items() if k!="input_rows"},(t,s)
     print("self-test passed: full periods, CRT vs exhaustive checks, prior model input")
 
 
