@@ -219,6 +219,8 @@ the listed residues modulo `merged_period` fully represent the
 intersection, even if the raw common period is larger. Otherwise
 the listed residues and density are an upper bound, and the original
 local constraints still specify the exact necessary condition.
+`min_abs_n_lower_bound` is a lower bound on the absolute value of any
+nonzero surviving multiplier, exact when `exact_classes` is true.
 `budget_limited` means satisfiability was not decided. A CRT witness
 is a positive integer satisfying the congruences, not a four-distance
 witness. Increasing the node/class caps increases computational cost,
