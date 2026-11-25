@@ -180,6 +180,52 @@ to the smaller of a and 1-a and may swap axes, using square symmetries.
 Completed outputs are not overwritten, and partial files are not
 resumable checkpoints. Python standard library only.
 
+
+## Unbounded multiplier CRT sieve
+
+`src/periodic_sieve.py` reuses the exact (curve, generator) models
+from the elliptic sieve, or builds models from seeds/points. At each
+good prime it computes the complete cyclic period m of the reduced
+generator, not just the first N multiples. It records allowed
+residues n mod m for the ordinary height f(nR) and inverse height
+AB/f(nR). Negative integer n covers both signs of each height.
+
+The generalized Chinese remainder theorem gives a finite constraint
+system for all integer n. The script intersects equal periods, removes
+redundant periodic structure, propagates pairwise gcd compatibility,
+and uses budgeted exhaustive CRT branching if needed. An excluded
+branch is a proof of impossibility for that branch of the selected
+generator, with no bound on n. A surviving residue only passes these
+necessary local tests. In particular the ordinary branch always
+contains n divisible by every period, because poles are allowed at
+good primes. It cannot be excluded by this finite set of good-prime
+tests. This does not certify the existence of a rational four-distance
+point. No entire-curve or Mordell-Weil rank claim is made.
+
+```bash
+python3 src/periodic_sieve.py --self-test
+mkdir -p local-periodic
+python3 src/periodic_sieve.py \
+  --prior-models local-elliptic/m1800-curves.jsonl.gz \
+  --prime-limit 251 --max-models 2000 \
+  --node-cap 10000 --class-cap 1024 \
+  --output local-periodic/m1800-summary.json \
+  --records local-periodic/m1800-periods.jsonl.gz
+```
+
+The compressed output contains each exact model, all local periods and
+allowed residues, and the CRT results. `exact_classes` indicates that
+the listed residues modulo `merged_period` fully represent the
+intersection, even if the raw common period is larger. Otherwise
+the listed residues and density are an upper bound, and the original
+local constraints still specify the exact necessary condition.
+`budget_limited` means satisfiability was not decided. A CRT witness
+is a positive integer satisfying the congruences, not a four-distance
+witness. Increasing the node/class caps increases computational cost,
+not the multiplier range. No giant rational multiples are calculated.
+Completed outputs are not overwritten; partial files are not
+resumable checkpoints. Python standard library only.
+
 ## GitHub Actions campaign
 
 The workflow runs daily at 02:23 UTC, on source changes to `main`, and via manual dispatch. Four shards process disjoint slices of the ordered-triple-pair search space. The scheduled campaign has **non-overlapping parameter bands** (at least one triple uses an Euclid parameter from the newly added band):
