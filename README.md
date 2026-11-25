@@ -228,6 +228,61 @@ not the multiplier range. No giant rational multiples are calculated.
 Completed outputs are not overwritten; partial files are not
 resumable checkpoints. Python standard library only.
 
+
+## Certified fixed-coordinate classification
+
+`src/classify_curves.py` groups existing model records by coprime A,B
+(0<A<B). It computes necessary local squareclass conditions for the
+2-isogeny descent on E and its dual, obtains certified rank upper/lower
+bounds, and bounds canonical heights using exact duplication and gcd
+estimates for square coordinates. It re-runs the periodic sieve;
+when the inverse branch is excluded, the difference of heights of two
+complementary ordinary multiples either contradicts the multiplier
+gap or bounds the smaller multiplier for exact checking. If the rank
+is exactly one and the torsion order is certified as eight, a finite
+height-bound search can prove saturation of the chosen generator.
+Only after these steps does it report a whole-line exclusion.
+
+```bash
+python3 src/classify_curves.py --self-test
+mkdir -p local-classify
+python3 src/classify_curves.py \
+  --prior-models local-periodic/m1800-periods.jsonl.gz \
+  --max-models 2000 --prime-limit 251 \
+  --descent-prime-limit 97 --factor-limit 100000 \
+  --height-steps 4 --saturation-cap 1024 \
+  --output local-classify/m1800-summary.json \
+  --records local-classify/m1800-proofs.jsonl.gz
+```
+
+`line_excluded_rank_one` certifies nonexistence of an interior point
+on the fixed coordinate and its square-symmetry images.
+`subgroup_excluded_*` certifies only the selected ordinary/inverse
+family; the entire curve may still have a solution. `rank_at_least_2`
+requires a certified lower bound, not merely a large upper bound.
+`rank_lower`, `rank_upper` are saved separately. Incomplete bounded
+factorization, descent, torsion, saturation or exact checks may leave
+a curve unresolved. The finite saturation search checks at most
+`--saturation-cap` for each height numerator and denominator (default
+1024, hence up to 1,048,576 pairs per eligible curve). It skips the
+search if the rigorous bound is larger. The rank-two search itself is
+not implemented here. Python standard library only.
+
+The compressed proof records include model generators, factorization,
+local descent exclusions, height bounds, torsion reduction counts,
+CRT constraints, and saturation checks. Recompute records with:
+
+```bash
+python3 src/classify_curves.py --verify \
+  --output local-classify/m1800-summary.json \
+  --records local-classify/m1800-proofs.jsonl.gz
+```
+
+Replay uses the same implementation and parameters; independent
+mathematical/software review is a separate verification step.
+Completed output files are not overwritten. Partial files are not
+resumable checkpoints.
+
 ## GitHub Actions campaign
 
 The workflow runs daily at 02:23 UTC, on source changes to `main`, and via manual dispatch. Four shards process disjoint slices of the ordered-triple-pair search space. The scheduled campaign has **non-overlapping parameter bands** (at least one triple uses an Euclid parameter from the newly added band):
