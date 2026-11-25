@@ -243,6 +243,23 @@ is exactly one and the torsion order is certified as eight, a finite
 height-bound search can prove saturation of the chosen generator.
 Only after these steps does it report a whole-line exclusion.
 
+The v3 saturation method (default) uses denominator divisibility
+instead of a height-bounded numerator/denominator grid. After rank
+one and torsion order eight are certified, all four rational halves
+of P and P+T are checked for membership in 2E(Q) to exclude even
+indices. For odd index, write y(P)=a/b and d=den(AB/y(P)).
+A primitive generator's positive height i/j must satisfy j|b and
+i/gcd(i,AB)|d, so only divisors of AB*d and b need enumeration.
+If all qualifying heights equal those of P or P+T, saturation is
+certified. Otherwise the old finite-height test is attempted.
+The divisor-pair cap defaults to 1,000,000; factorization failure,
+cap exhaustion or additional candidates are not exclusion proofs.
+The old method remains available with `--divisor-saturation 0`,
+and v1/v2 proof files retain their original replay path.
+Use new output filenames (e.g. m1800-v3-summary.json and
+m1800-v3-proofs.jsonl.gz) when rerunning the classification.
+The 13 rank-one m1800 models are included in the self-test fixtures.
+
 The default v2 descent constructs a binary linear system on signed
 squarefree divisor exponents using all factored odd bad primes
 (Legendre and valuation conditions) and a necessary 2-adic test.
