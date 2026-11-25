@@ -58,6 +58,8 @@ def factor(n,limit):
     if n<=0:
         raise ValueError("positive factorization input required")
     out={}
+    if n<2**64 and prime64(n):
+        return {n:1}
     for p in trial_primes(limit):
         if p*p>n:
             break
@@ -67,10 +69,8 @@ def factor(n,limit):
                 n//=p
                 e+=1
             out[p]=e
-        if n==1:
-            break
-        if n<2**64 and prime64(n):
-            break
+            if n==1 or (n<2**64 and prime64(n)):
+                break
     if n>1:
         if n>=2**64 or not prime64(n):
             return None
@@ -326,7 +326,7 @@ def subgroup_gap(A,B,P,lo,L,C,periodic,exact_n_cap,bit_cap):
     result.update(min_abs_n=N,divisor=D)
     # If different absolute indices are both multiples of D, the gap
     # is at least D*(2*N+D). Equal indices imply the midpoint.
-    if exact_check(A,B,F(A+B,2)):
+    if sq((A+B)**2+4*A*A) and sq((A+B)**2+4*B*B):
         result["status"]="solution"
         result["solution"]=exact_check(A,B,F(A+B,2))
         return result
