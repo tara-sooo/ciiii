@@ -466,6 +466,138 @@ def finite_saturation(P,A,B,L,C,hi,lo,steps,bit_cap,cap):
     return result
 
 
+
+def rational_root(x):
+    if x<0 or not sq(x.numerator) or not sq(x.denominator):
+        return None
+    return F(isqrt(x.numerator),isqrt(x.denominator))
+
+
+def in_double_image(P,A,B):
+    # Full rational 2-torsion halving criterion. Only used on
+    # non-torsion points (so none of these three quantities is zero).
+    if P is None:
+        return True
+    x,v=P
+    if not v:
+        raise ArithmeticError("unexpected torsion in halving test")
+    return all(rational_root(z) is not None for z in (x,x+A*A,x+B*B))
+
+
+def all_halves(P,A,B):
+    """All four rational halves of a non-torsion point of 2E(Q)."""
+    c2,c4=coeff(A,B)
+    if P is None or not on_curve(P,c2,c4) or not P[1]:
+        raise ArithmeticError("invalid non-torsion halving target")
+    x,v=P
+    roots=[rational_root(z) for z in (x,x+A*A,x+B*B)]
+    if any(z is None or z==0 for z in roots):
+        raise ArithmeticError("halving target not in 2E")
+    u,w,z=roots
+    halves=set()
+    for a in (u,-u):
+        for b in (w,-w):
+            d=-v/(a*b)
+            if d*d!=z*z:
+                raise ArithmeticError("inconsistent halving roots")
+            s=a*b+b*d+d*a
+            H=(x+s,-v-(a+b+d)*s)
+            if not on_curve(H,c2,c4) or add(H,H,c2,c4)!=P:
+                raise ArithmeticError("incorrect halving formula")
+            halves.add(H)
+    if len(halves)!=4:
+        raise ArithmeticError("incomplete rational halves")
+    return sorted(halves)
+
+
+def divisor_count(factors):
+    n=1
+    for e in factors.values():
+        n*=e+1
+    return n
+
+
+def positive_divisors(factors):
+    ds=[1]
+    for p,e in sorted(factors.items()):
+        ds=[d*p**k for d in ds for k in range(e+1)]
+    return sorted(ds)
+
+
+def divisor_saturation(P,A,B,fac,factor_limit,pair_cap):
+    """Certify index one, assuming rank 1, torsion order 8, P infinite
+    order in 2E(Q). The caller has already certified those hypotheses.
+
+    In 2E(Q)=Z*Q+{O,T}, P=kQ+epsilon*T. If k is even, either P or P+T
+    is in 4E(Q); exhaustive halving tests exclude that case. For odd k
+    absorb epsilon*T into Q. For an integral Weierstrass equation the
+    denominator of x(Q) divides that of x(kQ) (formal group at each
+    prime). Apply this also to Q+T, since k is odd. For positive
+    reduced heights y(P)=a/b, y(Q)=i/j we get j|b and
+    i/gcd(i,AB)|den(AB/y(P))=d. Hence i|AB*d. Only finitely many
+    divisor pairs need checking, without any canonical height bound.
+    """
+    result=dict(method="divisor",status="unresolved",halves=[],
+                even_index_excluded=False,raw_pairs=None,examined=0,
+                candidates=[])
+    c2,c4=coeff(A,B)
+    T=(F(0),F(0))
+    PT=add(P,T,c2,c4)
+    for label,target in (("P",P),("P_plus_T",PT)):
+        for H in all_halves(target,A,B):
+            double=in_double_image(H,A,B)
+            result["halves"].append(dict(target=label,point=encode_point(H),in_double_image=double))
+    if any(h["in_double_image"] for h in result["halves"]):
+        result["status"]="even_index_possible"
+        return result
+    result["even_index_excluded"]=True
+    y=rational_root(P[0])
+    yt=rational_root(PT[0])
+    if y is None or yt is None or y<=0 or y*yt!=A*B:
+        raise ArithmeticError("invalid reciprocal heights")
+    b=y.denominator
+    d=yt.denominator
+    result.update(y=str(y),inverse_y=str(yt),denominator=b,inverse_denominator=d)
+    fb,fd=factor(b,factor_limit),factor(d,factor_limit)
+    if fb is None or fd is None:
+        result["status"]="factorization_cap"
+        return result
+    fi=Counter(fac["A"])+Counter(fac["B"])+Counter(fd)
+    # All factors used in the two divisor lists must multiply back.
+    from math import prod
+    if prod(p**e for p,e in fi.items())!=A*B*d or prod(p**e for p,e in fb.items())!=b:
+        raise ArithmeticError("divisor factorization mismatch")
+    result["numerator_factors"]={str(p):e for p,e in sorted(fi.items())}
+    result["denominator_factors"]={str(p):e for p,e in sorted(fb.items())}
+    pairs=divisor_count(fi)*divisor_count(fb)
+    result["raw_pairs"]=pairs
+    if pairs>pair_cap:
+        result["status"]="pair_cap"
+        return result
+    nums,dens=positive_divisors(fi),positive_divisors(fb)
+    # The denominator condition is independent of j for coprime i,j.
+    # Filter numerators first; raw_pairs remains the original full size.
+    nums=[i for i in nums if d%(i//gcd(i,A*B))==0]
+    for j in dens:
+        aj,bj=(A*j)**2,(B*j)**2
+        for i in nums:
+            result["examined"]+=1
+            if gcd(i,j)!=1:
+                continue
+            r,s=isqrt(i*i+aj),isqrt(i*i+bj)
+            if r*r==i*i+aj and s*s==i*i+bj:
+                result["candidates"].append(dict(y=str(F(i,j)),distances=[str(F(r,j)),str(F(s,j))]))
+    heights={F(row["y"]) for row in result["candidates"]}
+    if y not in heights:
+        raise ArithmeticError("known height lost in divisor enumeration")
+    # If a true generator occurs among these candidates, it must now
+    # have the same x as P or P+T, hence be ±P or ±(P+T). Its free
+    # index is then necessarily one. Other candidates are unresolved,
+    # not a reason to claim non-saturation.
+    result["status"]="saturated" if heights<={y,yt} else "additional_candidates"
+    return result
+
+
 def subgroup_gap(A,B,P,lo,L,C,periodic,exact_n_cap,bit_cap):
     # Both complementary heights must lie on the ordinary branch if the
     # inverse branch is excluded. Their reduced denominators coincide.
@@ -613,7 +745,16 @@ def classify(A,B,Rs,opts):
     if tors["exact_order"]!=8:
         result["status"]="subgroup_excluded_torsion_unknown"
         return result
-    sat=finite_saturation(P,A,B,L,C,hi,lo,opts["height_steps"],opts["bit_cap"],opts["saturation_cap"])
+    if opts.get("divisor_saturation",0):
+        sat=divisor_saturation(P,A,B,fac,opts["factor_limit"],opts["divisor_pair_cap"])
+        if sat["status"]!="saturated":
+            fallback=finite_saturation(P,A,B,L,C,hi,lo,opts["height_steps"],opts["bit_cap"],opts["saturation_cap"])
+            sat["height_fallback"]=fallback
+            if fallback["status"]=="saturated":
+                sat["status"]="saturated"
+                sat["method"]="height_fallback"
+    else:
+        sat=finite_saturation(P,A,B,L,C,hi,lo,opts["height_steps"],opts["bit_cap"],opts["saturation_cap"])
     result["saturation"]=sat
     result["status"]="line_excluded_rank_one" if sat["status"]=="saturated" else "subgroup_excluded_saturation_unknown"
     return result
@@ -621,7 +762,8 @@ def classify(A,B,Rs,opts):
 
 DEFAULTS=dict(factor_limit=100000,descent_prime_limit=97,class_cap=4096,
     height_steps=4,bit_cap=32768,prime_limit=251,node_cap=10000,
-    crt_class_cap=1024,exact_n_cap=100,saturation_cap=1024,independence_cap=4,bad_prime_linear=1)
+    crt_class_cap=1024,exact_n_cap=100,saturation_cap=1024,independence_cap=4,bad_prime_linear=1,
+    divisor_saturation=1,divisor_pair_cap=1000000)
 
 
 def load_models(paths,max_models):
@@ -670,6 +812,11 @@ def run(paths,output,records,max_models,opts):
                     linear_hist[(side,len(d["basis_generators"])-d["linear_dimension"])]+=1
                     stats["linear_constraints_independent_"+side]+=len(d["basis_generators"])-d["linear_dimension"]
                     stats["linear_enumeration_cap_"+side]+=int(not d["enumeration_complete"])
+            sat=r.get("saturation",{})
+            if sat.get("method") in ("divisor","height_fallback"):
+                stats["divisor_raw_pairs"]+=sat.get("raw_pairs") or 0
+                stats["divisor_examined"]+=sat["examined"]
+                stats["saturation_method_"+sat["method"]+"_"+sat["status"]]+=1
             stats["curves"]+=1
             stats["status_"+status]+=1
             stats["rank_one"]+=int(r["rank_lower"]==r["rank_upper"]==1)
@@ -683,7 +830,8 @@ def run(paths,output,records,max_models,opts):
             if stats["curves"]%25==0:
                 print(f"curves={stats['curves']} rank1={stats['rank_one']} rank2plus={stats['rank_at_least_2']} "
                       f"subgroup_excluded={stats['subgroup_excluded']} line_excluded={stats['line_excluded']}",flush=True)
-    summary=dict(method="rank-height-saturation-v2" if opts.get("bad_prime_linear") else "rank-height-saturation-v1",
+    summary=dict(method=("rank-height-saturation-v3" if opts.get("divisor_saturation") else
+                         "rank-height-saturation-v2" if opts.get("bad_prime_linear") else "rank-height-saturation-v1"),
                  parameters=opts,inputs=paths,stats=dict(stats),
                  rank_bounds=[[lo,hi,count] for (lo,hi),count in rank_hist.most_common()],
                  linear_dimension_reductions=[[side,k,count] for (side,k),count in linear_hist.most_common()])
@@ -780,7 +928,7 @@ def self_test():
 
     A,B=7,45
     R=(F(27),F(-2052))
-    opts=DEFAULTS.copy()
+    opts=DEFAULTS|{"divisor_saturation":0}
     fac=factor_inputs(A,B,opts["factor_limit"])
     L,C,D=height_constants(A,B,fac)
     assert L==54 and C==34,(L,C,D)
@@ -815,6 +963,70 @@ def self_test():
             out.write(json.dumps(dict(A=str(A),B=str(B),R=encode_point(R)))+"\n")
         run([str(src)],f/"summary.json",f/"records.gz",1,small)
         verify(f/"summary.json",f/"records.gz")
+
+    # Regression fixtures: the 13 rank-one models from the m1800 v2
+    # campaign. Rebuild rational P and a half, independently re-run
+    # descent, torsion, CRT, height-gap and divisor saturation.
+    fixtures=[
+        (31500,4211959,"1181040",1920),
+        (306307,725493,"904916/9",864),
+        (310167,2493133,"2004156",768),
+        (586432,661279,"18515812/45",2016),
+        (1246277,11530543,"244499480/33",4096),
+        (2181403,3239757,"95462640/19",25600),
+        (20026307,22413917,"136129708/15",6144),
+        (317621269,397598771,"1771882035/4",12288),
+        (331016768,985159357,"7360804087/12",32256),
+        (815084340,8680221227,"13656412640/3",98304),
+        (3944418304,10378258219,"20040364960/3",22528),
+        (201801472571,766253114929,"651307041672",12288),
+        (901945479391,3439022429276,"1686675164160",67584),
+    ]
+    total=0
+    models=[]
+    v3opts=DEFAULTS|{"saturation_cap":16}
+    for a,b,h,expected in fixtures:
+        y=F(h)
+        d1=rational_root(y*y+a*a)
+        d2=rational_root(y*y+b*b)
+        assert d1 is not None and d2 is not None
+        P=(y*y,y*d1*d2)
+        R=all_halves(P,a,b)[0]
+        models.append(dict(A=str(a),B=str(b),R=encode_point(R)))
+        r=classify(a,b,[R],v3opts)
+        assert r["status"]=="line_excluded_rank_one",(a,b,r["status"],r.get("saturation"))
+        s=r["saturation"]
+        assert s["method"]=="divisor" and s["even_index_excluded"]
+        assert s["raw_pairs"]==expected,(a,b,s)
+        assert {z["y"] for z in s["candidates"]}=={h}
+        assert len(s["halves"])==8
+        total+=s["raw_pairs"]
+        print("divisor fixture",a,b,s["raw_pairs"],s["examined"],r["status"])
+    assert total==286656
+    # Negative/cap tests: even multiples cannot be certified by the
+    # odd-index argument. A cap must never be treated as success.
+    a,b=7,45
+    R=(F(27),F(-2052))
+    ca,cb=coeff(a,b)
+    P=add(R,R,ca,cb)
+    fp=factor_inputs(a,b,100000)
+    even=divisor_saturation(add(P,P,ca,cb),a,b,fp,100000,1000000)
+    assert even["status"]=="even_index_possible" and not even["even_index_excluded"]
+    cap=divisor_saturation(P,a,b,fp,100000,1)
+    assert cap["status"]=="pair_cap" and cap["examined"]==0
+    # Replay actual v3 records with a fallback cap below the old bound.
+    with TemporaryDirectory() as root:
+        f=Path(root)
+        src=f/"fixtures.gz"
+        with gzip.open(src,"wt") as out:
+            for model in models:
+                out.write(json.dumps(model)+"\n")
+        result=run([str(src)],f/"summary.json",f/"records.gz",13,v3opts)
+        assert result["stats"]["line_excluded"]==13
+        assert result["stats"]["divisor_raw_pairs"]==286656
+        verify(f/"summary.json",f/"records.gz")
+    print("divisor saturation tests passed: 13 full line exclusions, even-index and cap rejection, replay")
+
     print("self-test passed: rank, heights, saturation, line exclusion and replay")
 
 
@@ -841,7 +1053,7 @@ if __name__=="__main__":
     limits=dict(factor_limit=(10,1000000),descent_prime_limit=(3,251),
         class_cap=(16,65536),height_steps=(0,8),bit_cap=(1024,1000000),
         prime_limit=(5,1000),node_cap=(1,100000),crt_class_cap=(1,10000),
-        exact_n_cap=(0,10000),saturation_cap=(1,4096),independence_cap=(1,16),bad_prime_linear=(0,1))
+        exact_n_cap=(0,10000),saturation_cap=(1,4096),independence_cap=(1,16),bad_prime_linear=(0,1),divisor_saturation=(0,1),divisor_pair_cap=(1,10000000))
     if not 1<=a.max_models<=100000 or any(not limits[k][0]<=v<=limits[k][1] for k,v in opts.items()):
         ap.error("invalid resource limit")
     run(a.prior_models,a.output,a.records,a.max_models,opts)
