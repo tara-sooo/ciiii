@@ -194,6 +194,7 @@ def sieve(R,A,B,N,primes,mode):
             for j,index in enumerate(direct):
                 groups[values[index]] |= 1<<j
             masks.append((p,values,groups))
+        partner_union=0
         for j,index in enumerate(direct):
             possible=((1<<len(direct))-1)^((1<<j)-1)
             for p,values,groups in masks:
@@ -204,10 +205,11 @@ def sieve(R,A,B,N,primes,mode):
             if possible:
                 pair_count+=possible.bit_count()
                 paired.add(index)
-                while possible:
-                    low=possible&-possible
-                    paired.add(direct[low.bit_length()-1])
-                    possible^=low
+                partner_union |= possible
+        while partner_union:
+            low=partner_union&-partner_union
+            paired.add(direct[low.bit_length()-1])
+            partner_union^=low
     chosen=sorted(paired) if mode=="pairs" else direct
     return direct,paired,chosen,pair_count,counts
 
@@ -453,6 +455,8 @@ if __name__=="__main__":
             and 128<=args.max_exact_bits<=1000000
             and 1<=args.max_exact_labels<=100000):
         ap.error("invalid resource limits")
+    if args.mode != "direct" and 4*args.max_multiple*len(primes_up_to(args.prime_limit))>4000000:
+        ap.error("pair table budget exceeded; reduce multiples or prime limit, or use direct mode")
     search(args.seeds,args.points,args.output,args.records,args.max_multiple,
         args.prime_limit,args.source_bits,args.max_curves,args.max_exact_bits,
         args.mode,args.axes,args.max_exact_labels)
